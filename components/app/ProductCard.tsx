@@ -8,9 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { cn, formatPrice } from "@/lib/utils";
 import { AddToCartButton } from "@/components/app/AddToCartButton";
 import { StockBadge } from "@/components/app/StockBadge";
-import type { FILTER_PRODUCTS_BY_NAME_QUERYResult } from "@/sanity.types";
+// import type { FILTER_PRODUCTS_BY_NAME_QUERYResult } from "@/sanity.types";
 
-type Product = FILTER_PRODUCTS_BY_NAME_QUERYResult[number];
+type Product = any[number]; //FILTER_PRODUCTS_BY_NAME_QUERYResult[number];
 
 interface ProductCardProps {
   product: Product;
@@ -88,7 +88,7 @@ export function ProductCard({ product }: ProductCardProps) {
       {/* Thumbnail strip - only show if multiple images */}
       {hasMultipleImages && (
         <div className="flex gap-2 border-t border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-800/50">
-          {images.map((image, index) => (
+          {images.map((image: any, index: number) => (
             <button
               key={image._key ?? index}
               type="button"

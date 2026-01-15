@@ -3,16 +3,16 @@
 import { useState } from "react";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type {
-  ALL_CATEGORIES_QUERYResult,
-  FILTER_PRODUCTS_BY_NAME_QUERYResult,
-} from "@/sanity.types";
+// import type {
+//   ALL_CATEGORIES_QUERYResult,
+//   FILTER_PRODUCTS_BY_NAME_QUERYResult,
+// } from "@/sanity.types";
 import { ProductFilters } from "./ProductFilters";
 import { ProductGrid } from "./ProductGrid";
 
 interface ProductSectionProps {
-  categories: ALL_CATEGORIES_QUERYResult;
-  products: FILTER_PRODUCTS_BY_NAME_QUERYResult;
+  categories: any; //ALL_CATEGORIES_QUERYResult;
+  products: any; //FILTER_PRODUCTS_BY_NAME_QUERYResult;
   searchQuery: string;
 }
 

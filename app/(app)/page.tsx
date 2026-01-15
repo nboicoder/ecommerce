@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { sanityFetch } from "@/sanity/lib/live";
 import { ALL_CATEGORIES_QUERY } from "@/lib/sanity/queries/categories";
 import {
@@ -38,6 +37,9 @@ export default async function Home({ searchParams }: PageProps) {
   const maxPrice = Number(params.maxPrice) || 0;
   const sort = params.sort ?? "name";
   const inStock = params.inStock ?? "";
+
+  console.log('Params ===>>', params);
+  console.log('Search query ===>>', searchQuery);
 
   //Select query based on sort parameter
   const getQuery = () => {
@@ -84,10 +86,12 @@ export default async function Home({ searchParams }: PageProps) {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
+
       {/* Featured Products Carousel */}
       <Suspense fallback={<FeaturedCarouselSkeleton />}>
         <FeaturedCarousel products={featuredProducts} />
       </Suspense>
+
       {/* Page Banner */}
       <div className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <div className="mx-auto max-w-7xl px-4 pt-8 sm:px-6 lg:px-8">
@@ -107,6 +111,7 @@ export default async function Home({ searchParams }: PageProps) {
           />
         </div>
       </div>
+
       {/* Products Section  */}
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <ProductSection

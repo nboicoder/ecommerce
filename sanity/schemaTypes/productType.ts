@@ -1,4 +1,4 @@
-import { PackageIcon } from "@sanity/icons";
+// import { PackageIcon } from "@sanity/icons";
 import { defineField, defineType } from "sanity";
 import {
   MATERIALS_SANITY_LIST,
@@ -9,7 +9,7 @@ export const productType = defineType({
   name: "product",
   title: "Product",
   type: "document",
-  icon: PackageIcon,
+  icon: [],
   groups: [
     { name: "details", title: "Details", default: true },
     { name: "media", title: "Media" },

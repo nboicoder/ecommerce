@@ -1,11 +1,11 @@
-import { UserIcon } from "@sanity/icons";
+// import { UserIcon } from "@sanity/icons";
 import { defineField, defineType } from "sanity";
 
 export const customerType = defineType({
   name: "customer",
   title: "Customer",
   type: "document",
-  icon: UserIcon,
+  icon: [], //UserIcon,
   groups: [
     { name: "details", title: "Customer Details", default: true },
     { name: "stripe", title: "Stripe" },
@@ -58,7 +58,7 @@ export const customerType = defineType({
         title: name ?? email ?? "Unknown Customer",
         subtitle: stripeCustomerId
           ? `${email ?? ""} • ${stripeCustomerId}`
-          : (email ?? ""),
+          : email ?? "",
       };
     },
   },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import { X } from "lucide-react";
 import {
   Select,
@@ -15,10 +15,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { COLORS, MATERIALS, SORT_OPTIONS } from "@/lib/constants/filters";
-import type { ALL_CATEGORIES_QUERYResult } from "@/sanity.types";
+// import type { ALL_CATEGORIES_QUERYResult } from "@/sanity.types";
 
 interface ProductFiltersProps {
-  categories: ALL_CATEGORIES_QUERYResult;
+  categories: any; //ALL_CATEGORIES_QUERYResult;
 }
 
 export function ProductFilters({ categories }: ProductFiltersProps) {
@@ -196,7 +196,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
         </FilterLabel>
         <Select
           value={currentCategory || "all"}
-          onValueChange={(value) =>
+          onValueChange={(value: any) =>
             updateParams({ category: value === "all" ? null : value })
           }
         >
@@ -211,7 +211,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((category) => (
+            {categories.map((category: any) => (
               <SelectItem key={category._id} value={category.slug ?? ""}>
                 {category.title}
               </SelectItem>
@@ -227,7 +227,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
         </FilterLabel>
         <Select
           value={currentColor || "all"}
-          onValueChange={(value) =>
+          onValueChange={(value: any) =>
             updateParams({ color: value === "all" ? null : value })
           }
         >
@@ -258,7 +258,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
         </FilterLabel>
         <Select
           value={currentMaterial || "all"}
-          onValueChange={(value) =>
+          onValueChange={(value: any) =>
             updateParams({ material: value === "all" ? null : value })
           }
         >
@@ -292,8 +292,8 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
           max={5000}
           step={100}
           value={priceRange}
-          onValueChange={(value) => setPriceRange(value as [number, number])}
-          onValueCommit={([min, max]) =>
+          onValueChange={(value: any) => setPriceRange(value as [number, number])}
+          onValueCommit={([min, max]: [number, number]) =>
             updateParams({
               minPrice: min > 0 ? min : null,
               maxPrice: max < 5000 ? max : null,
@@ -338,7 +338,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
         </span>
         <Select
           value={currentSort}
-          onValueChange={(value) => updateParams({ sort: value })}
+          onValueChange={(value: any) => updateParams({ sort: value })}
         >
           <SelectTrigger>
             <SelectValue />

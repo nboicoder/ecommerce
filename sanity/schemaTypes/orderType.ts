@@ -1,4 +1,4 @@
-import { BasketIcon } from "@sanity/icons";
+// import { BasketIcon } from "@sanity/icons";
 import { defineArrayMember, defineField, defineType } from "sanity";
 import { ORDER_STATUS_SANITY_LIST } from "@/lib/constants/orderStatus";
 
@@ -6,7 +6,7 @@ export const orderType = defineType({
   name: "order",
   title: "Order",
   type: "document",
-  icon: BasketIcon,
+  icon: [], //BasketIcon,
   groups: [
     { name: "details", title: "Order Details", default: true },
     { name: "customer", title: "Customer" },
@@ -140,7 +140,9 @@ export const orderType = defineType({
     prepare({ orderNumber, email, total, status }) {
       return {
         title: `Order ${orderNumber ?? "N/A"}`,
-        subtitle: `${email ?? "No email"} • £${total ?? 0} • ${status ?? "paid"}`,
+        subtitle: `${email ?? "No email"} • £${total ?? 0} • ${
+          status ?? "paid"
+        }`,
       };
     },
   },

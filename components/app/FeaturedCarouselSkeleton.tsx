@@ -39,5 +39,6 @@ export function FeaturedCarouselSkeleton() {
                 <Skeleton className="h-2 w-2 rounded-full bg-zinc-700" />
             </div>
         </div>
+
     );
 }
