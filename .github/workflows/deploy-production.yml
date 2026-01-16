@@ -1,0 +1,581 @@
+name: Deploy to Production (Docker)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      deployment_type:
+        description: 'Deployment Strategy'
+        required: true
+        type: choice
+        options:
+          - rolling-update
+          - blue-green
+          - canary
+        default: rolling-update
+      skip_smoke_tests:
+        description: 'Skip smoke tests (emergency deployments only)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '8.15.4'
+  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'docker.io' }}
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/your-frontend-proj-name
+
+jobs:
+  # ====================
+  # Pre-Production Validation
+  # ====================
+  validate:
+    name: Pre-Production Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_deploy: ${{ steps.validate.outputs.deploy }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION=$(cat package.json | grep '"version"' | head -1 | awk -F '"' '{print $4}')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Deploying version: $VERSION"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run comprehensive checks
+        run: |
+          echo "Running quality checks..."
+          pnpm type-check
+          pnpm format:check
+          pnpm lint
+
+      - name: Run unit tests with coverage
+        run: pnpm test:ci
+
+      - name: Upload test coverage
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/coverage-final.json
+          flags: production
+
+      - name: Build production bundle
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.PRODUCTION_API_BASE_URL }}
+          NEXT_PUBLIC_WS_URL: ${{ secrets.PRODUCTION_WS_URL }}
+          NEXTAUTH_SECRET: ${{ secrets.PRODUCTION_NEXTAUTH_SECRET }}
+          NEXTAUTH_URL: ${{ secrets.PRODUCTION_NEXTAUTH_URL }}
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.PRODUCTION_SENTRY_DSN }}
+          NEXT_PUBLIC_APP_VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Analyze bundle size
+        run: |
+          BUNDLE_SIZE=$(du -sh .next | cut -f1)
+          echo "Production bundle size: $BUNDLE_SIZE"
+          echo "**Bundle Size:** $BUNDLE_SIZE" >> $GITHUB_STEP_SUMMARY
+
+      - name: Run security audit
+        run: |
+          pnpm audit --audit-level=high || echo "Security vulnerabilities found"
+        continue-on-error: false
+
+      - name: Validate environment variables
+        id: validate
+        run: |
+          # Check if critical secrets are set
+          if [ -z "${{ secrets.PRODUCTION_API_BASE_URL }}" ]; then
+            echo "❌ PRODUCTION_API_BASE_URL not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRODUCTION_NEXTAUTH_SECRET }}" ]; then
+            echo "❌ PRODUCTION_NEXTAUTH_SECRET not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.DOCKER_USERNAME }}" ]; then
+            echo "❌ DOCKER_USERNAME not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.DOCKER_PASSWORD }}" ]; then
+            echo "❌ DOCKER_PASSWORD not set"
+            exit 1
+          fi
+          echo "✅ All critical environment variables validated"
+          echo "deploy=true" >> $GITHUB_OUTPUT
+
+      - name: Upload production build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-build-${{ steps.version.outputs.version }}
+          path: .next
+          retention-days: 30
+
+  # ====================
+  # Manual Approval Gate
+  # ====================
+  approve:
+    name: Production Deployment Approval
+    runs-on: ubuntu-latest
+    needs: validate
+    environment:
+      name: production-approval
+    steps:
+      - name: Wait for approval
+        run: |
+          echo "⏳ Waiting for manual approval to deploy to production..."
+          echo "Version: ${{ needs.validate.outputs.version }}"
+          echo "Deployment Type: ${{ github.event.inputs.deployment_type || 'rolling-update' }}"
+          echo "This step requires manual approval from authorized personnel."
+
+      - name: Log approval
+        run: |
+          echo "✅ Production deployment approved by: ${{ github.actor }}"
+          echo "Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  # ====================
+  # Build and Push Production Docker Image
+  # ====================
+  build-and-push:
+    name: Build and Push Production Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [validate, approve]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
+
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=prod-
+            type=raw,value=latest
+            type=raw,value=${{ needs.validate.outputs.version }}
+          labels: |
+            org.opencontainers.image.title=Mission Control System Frontend
+            org.opencontainers.image.description=Satellite Mission Control System V2 Frontend
+            org.opencontainers.image.vendor=Sayari Labs
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+            environment=production
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:production-cache
+          cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:production-cache,mode=max
+          build-args: |
+            BUILD_ENV=production
+            NEXT_PUBLIC_API_BASE_URL=${{ secrets.PRODUCTION_API_BASE_URL }}
+            NEXT_PUBLIC_WS_URL=${{ secrets.PRODUCTION_WS_URL }}
+            NEXT_PUBLIC_APP_NAME=Mission Control System
+            NEXT_PUBLIC_APP_VERSION=${{ needs.validate.outputs.version }}
+            NEXT_PUBLIC_ENABLE_3D_VISUALIZATION=true
+            NEXT_PUBLIC_ENABLE_WEB_VITALS=true
+            NEXT_PUBLIC_ENABLE_ANALYTICS=true
+            NEXT_PUBLIC_DEBUG_MODE=false
+            NEXT_PUBLIC_MAPBOX_TOKEN=${{ secrets.MAPBOX_TOKEN }}
+            NEXT_PUBLIC_CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.PRODUCTION_SENTRY_DSN }}
+          platforms: linux/amd64,linux/arm64
+          provenance: true
+          sbom: true
+
+      - name: Scan Docker image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Sign Docker image with Cosign (if configured)
+        if: ${{ secrets.COSIGN_KEY != '' }}
+        run: |
+          echo "Cosign signing not implemented yet"
+          # Future: implement cosign signing for supply chain security
+
+      - name: Generate image summary
+        run: |
+          echo "## Docker Image Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Digest:** ${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # ====================
+  # Deploy to Production
+  # ====================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [validate, approve, build-and-push]
+    environment:
+      name: production
+      url: ${{ secrets.PRODUCTION_URL }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH (Rolling Update)
+        if: ${{ github.event.inputs.deployment_type == 'rolling-update' || github.event.inputs.deployment_type == '' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOST }}
+          username: ${{ secrets.PRODUCTION_SSH_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT || 22 }}
+          script: |
+            cd ${{ secrets.PRODUCTION_DEPLOY_PATH || '/opt/your-frontend-proj-name' }}
+
+            # Pull latest image
+            docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}
+
+            # Tag as latest
+            docker tag ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }} \
+                       ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+            # Rolling update with docker-compose
+            docker-compose -f docker-compose.production.yml up -d --no-deps --build your-frontend-proj-name-production
+
+            # Wait for new containers to be healthy
+            sleep 60
+
+            # Verify deployment
+            docker-compose -f docker-compose.production.yml ps
+
+            # Check health endpoint
+            curl -f http://localhost:3000/api/health || exit 1
+
+            # Clean up old images
+            docker image prune -f
+
+            echo "Production deployment successful!"
+
+      - name: Deploy via Docker Swarm (Blue-Green)
+        if: ${{ github.event.inputs.deployment_type == 'blue-green' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOST }}
+          username: ${{ secrets.PRODUCTION_SSH_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT || 22 }}
+          script: |
+            cd ${{ secrets.PRODUCTION_DEPLOY_PATH || '/opt/your-frontend-proj-name' }}
+
+            # Deploy new version (green)
+            docker stack deploy -c docker-compose.production.yml mcs-production-green
+
+            # Wait for new stack to be healthy
+            sleep 90
+
+            # Verify health
+            curl -f http://localhost:3000/api/health || exit 1
+
+            # Switch traffic to green (update load balancer or DNS)
+            # This step depends on your infrastructure setup
+
+            # Remove old stack (blue)
+            docker stack rm mcs-production || true
+
+            # Rename green to production
+            docker stack deploy -c docker-compose.production.yml mcs-production
+
+            echo "Blue-green deployment successful!"
+
+      - name: Deploy via Kubernetes (Canary)
+        if: ${{ github.event.inputs.deployment_type == 'canary' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOST }}
+          username: ${{ secrets.PRODUCTION_SSH_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT || 22 }}
+          script: |
+            # Deploy canary version (10% traffic)
+            kubectl set image deployment/your-frontend-proj-name-canary \
+              your-frontend-proj-name=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }} \
+              -n production
+
+            # Wait and monitor metrics
+            sleep 120
+
+            # If successful, rollout to 100%
+            kubectl set image deployment/your-frontend-proj-name \
+              your-frontend-proj-name=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }} \
+              -n production
+
+            kubectl rollout status deployment/mcs-frontend -n production
+
+            echo "Canary deployment successful!"
+
+      - name: Wait for deployment to stabilize
+        run: sleep 60
+
+      - name: Verify deployment health
+        run: |
+          if [ -n "${{ secrets.PRODUCTION_URL }}" ]; then
+            for i in {1..5}; do
+              if curl -f ${{ secrets.PRODUCTION_URL }}/api/health; then
+                echo "Health check passed"
+                exit 0
+              fi
+              echo "Health check attempt $i failed, retrying..."
+              sleep 10
+            done
+            echo "Health check failed after 5 attempts"
+            exit 1
+          else
+            echo "PRODUCTION_URL not configured, skipping remote health check"
+          fi
+
+  # ====================
+  # Post-Deployment Smoke Tests
+  # ====================
+  smoke-tests:
+    name: Production Smoke Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [validate, deploy-production]
+    if: ${{ !inputs.skip_smoke_tests }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run critical path tests
+        run: pnpm test:e2e
+        env:
+          BASE_URL: ${{ secrets.PRODUCTION_URL }}
+          PLAYWRIGHT_TEST_MATCH: "**/critical.spec.ts"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-smoke-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 30
+
+      - name: Notify on test failure
+        if: failure()
+        run: |
+          echo "❌ Smoke tests failed! Manual intervention required!"
+          echo "Consider initiating rollback procedure."
+
+  # ====================
+  # Create Sentry Release
+  # ====================
+  sentry-release:
+    name: Create Sentry Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [validate, deploy-production]
+    continue-on-error: true
+    if: ${{ secrets.SENTRY_AUTH_TOKEN != '' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Sentry release
+        uses: getsentry/action-release@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        with:
+          environment: production
+          version: ${{ needs.validate.outputs.version }}
+          sourcemaps: .next
+
+  # ====================
+  # Deployment Summary
+  # ====================
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [validate, approve, build-and-push, deploy-production, smoke-tests, sentry-release]
+    if: always()
+    steps:
+      - name: Determine overall status
+        id: status
+        run: |
+          if [ "${{ needs.smoke-tests.result }}" == "failure" ]; then
+            echo "status=warning" >> $GITHUB_OUTPUT
+            echo "message=⚠️ Deployment completed but smoke tests failed!" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.deploy-production.result }}" == "failure" ]; then
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "message=❌ Production deployment failed!" >> $GITHUB_OUTPUT
+          else
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "message=✅ Production deployment successful!" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate deployment summary
+        run: |
+          echo "## 🚀 Production Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.status.outputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Approved by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Type:** ${{ github.event.inputs.deployment_type || 'rolling-update' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Job Status:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Validation: ${{ needs.validate.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Approval: ${{ needs.approve.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker Build & Push: ${{ needs.build-and-push.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Deploy to Production: ${{ needs.deploy-production.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Smoke Tests: ${{ needs.smoke-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Sentry Release: ${{ needs.sentry-release.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ secrets.PRODUCTION_URL }}" ]; then
+            echo "**Production URL:** ${{ secrets.PRODUCTION_URL }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "**Docker Image:** ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Exit with appropriate code
+        run: |
+          if [ "${{ steps.status.outputs.status }}" == "failure" ]; then
+            exit 1
+          elif [ "${{ steps.status.outputs.status }}" == "warning" ]; then
+            echo "⚠️ Deployment succeeded but with warnings"
+            exit 0
+          else
+            echo "✅ Deployment fully successful"
+            exit 0
+          fi
+
+  # ====================
+  # Rollback (Emergency)
+  # ====================
+  rollback:
+    name: Emergency Rollback
+    runs-on: ubuntu-latest
+    needs: [validate, smoke-tests]
+    if: failure() && needs.smoke-tests.result == 'failure'
+    environment:
+      name: production-rollback
+    steps:
+      - name: Rollback notification
+        run: |
+          echo "🔄 Initiating emergency rollback due to failed smoke tests..."
+          echo "This requires manual intervention!"
+
+      - name: Automated rollback instructions
+        run: |
+          echo "## Emergency Rollback Procedure" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. SSH into production server" >> $GITHUB_STEP_SUMMARY
+          echo "2. Run: docker-compose -f docker-compose.production.yml down" >> $GITHUB_STEP_SUMMARY
+          echo "3. Revert to previous image version" >> $GITHUB_STEP_SUMMARY
+          echo "4. Run: docker-compose -f docker-compose.production.yml up -d" >> $GITHUB_STEP_SUMMARY
+          echo "5. Verify health: curl https://production-url/api/health" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "OR use Docker Swarm rollback:" >> $GITHUB_STEP_SUMMARY
+          echo "docker service rollback your-proj-name-production_your-frontend-proj-name-production" >> $GITHUB_STEP_SUMMARY

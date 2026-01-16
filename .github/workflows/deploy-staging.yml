@@ -1,0 +1,383 @@
+name: Deploy to Staging (Docker)
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip tests (use with caution)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '8.15.4'
+  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'docker.io' }}
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/your-frontend-proj-name
+
+jobs:
+  # ====================
+  # Pre-Deployment Checks
+  # ====================
+  pre-deploy:
+    name: Pre-Deployment Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      should_deploy: ${{ steps.check.outputs.deploy }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if deployment needed
+        id: check
+        run: |
+          # Check if there are any frontend changes
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "all")
+          if echo "$CHANGED_FILES" | grep -qE "^(src/|public/|package.json|pnpm-lock.yaml|next.config.js|Dockerfile|docker-compose)"; then
+            echo "Frontend changes detected, proceeding with deployment"
+            echo "deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "No frontend changes, skipping deployment"
+            echo "deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(cat package.json | grep '"version"' | head -1 | awk -F '"' '{print $4}')
+          STAGING_VERSION="${VERSION}-staging.${GITHUB_SHA::7}"
+          echo "version=$STAGING_VERSION" >> $GITHUB_OUTPUT
+          echo "Staging version: $STAGING_VERSION"
+
+      - name: Setup Node.js
+        if: steps.check.outputs.deploy == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        if: steps.check.outputs.deploy == 'true'
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Get pnpm store directory
+        if: steps.check.outputs.deploy == 'true'
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        if: steps.check.outputs.deploy == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        if: steps.check.outputs.deploy == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Run quality checks
+        if: steps.check.outputs.deploy == 'true' && !inputs.skip_tests
+        run: |
+          pnpm type-check
+          pnpm format:check
+          pnpm lint
+
+      - name: Run unit tests
+        if: steps.check.outputs.deploy == 'true' && !inputs.skip_tests
+        run: pnpm test:ci
+
+      - name: Upload test coverage
+        if: steps.check.outputs.deploy == 'true' && !inputs.skip_tests
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/coverage-final.json
+          flags: staging
+
+  # ====================
+  # Build and Push Docker Image
+  # ====================
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: pre-deploy
+    if: needs.pre-deploy.outputs.should_deploy == 'true'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
+
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=staging-
+            type=raw,value=staging-latest
+            type=raw,value=${{ needs.pre-deploy.outputs.version }}
+          labels: |
+            org.opencontainers.image.title=Project Name Here
+            org.opencontainers.image.description=Project Abel Here
+            org.opencontainers.image.vendor=Developer Name
+            org.opencontainers.image.version=${{ needs.pre-deploy.outputs.version }}
+            environment=staging
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: staging
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:staging-cache
+          cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:staging-cache,mode=max
+          build-args: |
+            BUILD_ENV=staging
+            NEXT_PUBLIC_API_BASE_URL=${{ secrets.STAGING_API_BASE_URL }}
+            NEXT_PUBLIC_WS_URL=${{ secrets.STAGING_WS_URL }}
+            NEXT_PUBLIC_APP_NAME=Mission Control System (Staging)
+            NEXT_PUBLIC_APP_VERSION=${{ needs.pre-deploy.outputs.version }}
+            NEXT_PUBLIC_ENABLE_3D_VISUALIZATION=true
+            NEXT_PUBLIC_ENABLE_WEB_VITALS=true
+            NEXT_PUBLIC_ENABLE_ANALYTICS=false
+            NEXT_PUBLIC_DEBUG_MODE=false
+            NEXT_PUBLIC_MAPBOX_TOKEN=${{ secrets.MAPBOX_TOKEN }}
+            NEXT_PUBLIC_CESIUM_ION_TOKEN=${{ secrets.CESIUM_ION_TOKEN }}
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.STAGING_SENTRY_DSN }}
+          platforms: linux/amd64,linux/arm64
+
+      - name: Scan Docker image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:staging-latest
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate image summary
+        run: |
+          echo "## Docker Image Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Staging" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.pre-deploy.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:staging-latest" >> $GITHUB_STEP_SUMMARY
+          echo "**Digest:** ${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # ====================
+  # Deploy to Staging Environment
+  # ====================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [pre-deploy, build-and-push]
+    environment:
+      name: staging
+      url: ${{ secrets.STAGING_URL }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH (if using remote Docker host)
+        if: ${{ secrets.STAGING_SSH_HOST != '' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_SSH_PORT || 22 }}
+          script: |
+            cd ${{ secrets.STAGING_DEPLOY_PATH || '/opt/your-frontend-proj-name' }}
+
+            # Pull latest image
+            docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:staging-latest
+
+            # Stop and remove old container
+            docker-compose -f docker-compose.staging.yml down || true
+
+            # Start new container
+            docker-compose -f docker-compose.staging.yml up -d
+
+            # Wait for health check
+            sleep 30
+
+            # Verify deployment
+            docker-compose -f docker-compose.staging.yml ps
+
+            # Check health endpoint
+            curl -f http://localhost:3000/api/health || exit 1
+
+            echo "Staging deployment successful!"
+
+      - name: Deploy via Docker Compose (local)
+        if: ${{ secrets.STAGING_SSH_HOST == '' }}
+        run: |
+          echo "Note: SSH deployment not configured. Set STAGING_SSH_HOST to enable remote deployment."
+          echo "For local deployment, use: docker-compose -f docker-compose.staging.yml up -d"
+
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Verify deployment health
+        continue-on-error: true
+        run: |
+          if [ -n "${{ secrets.STAGING_URL }}" ]; then
+            curl -f ${{ secrets.STAGING_URL }}/api/health || echo "Health check failed"
+          else
+            echo "STAGING_URL not configured, skipping remote health check"
+          fi
+
+  # ====================
+  # Post-Deployment Smoke Tests
+  # ====================
+  smoke-tests:
+    name: Post-Deployment Smoke Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [pre-deploy, deploy-staging]
+    if: needs.pre-deploy.outputs.should_deploy == 'true' && !inputs.skip_tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run smoke tests
+        if: ${{ secrets.STAGING_URL != '' }}
+        run: pnpm test:e2e
+        env:
+          BASE_URL: ${{ secrets.STAGING_URL }}
+          PLAYWRIGHT_TEST_MATCH: "**/smoke.spec.ts"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-smoke-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  # ====================
+  # Deployment Notification
+  # ====================
+  notify:
+    name: Deployment Notification
+    runs-on: ubuntu-latest
+    needs: [pre-deploy, build-and-push, deploy-staging, smoke-tests]
+    if: always() && needs.pre-deploy.outputs.should_deploy == 'true'
+    steps:
+      - name: Determine deployment status
+        id: status
+        run: |
+          if [ "${{ needs.smoke-tests.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "message=✅ Staging deployment successful with passing tests" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.smoke-tests.result }}" == "skipped" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "message=✅ Staging deployment successful (tests skipped)" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.deploy-staging.result }}" == "failure" ]; then
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "message=❌ Staging deployment failed" >> $GITHUB_OUTPUT
+          else
+            echo "status=warning" >> $GITHUB_OUTPUT
+            echo "message=⚠️ Staging deployment completed but tests failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create deployment summary
+        run: |
+          echo "## 🚀 Staging Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.status.outputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Staging" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.pre-deploy.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Job Status:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Pre-Deploy Checks: ${{ needs.pre-deploy.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker Build & Push: ${{ needs.build-and-push.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Deploy to Staging: ${{ needs.deploy-staging.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Smoke Tests: ${{ needs.smoke-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ secrets.STAGING_URL }}" ]; then
+            echo "**Staging URL:** ${{ secrets.STAGING_URL }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "**Docker Image:** ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:staging-latest" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ steps.status.outputs.status }}';
+            const emoji = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚠️';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `${emoji} **Staging Deployment**\n\n${{ steps.status.outputs.message }}\n\n**Version:** ${{ needs.pre-deploy.outputs.version }}\n**Branch:** ${{ github.ref_name }}\n**Commit:** ${{ github.sha }}\n\n[View Deployment](${{ secrets.STAGING_URL }})`
+            })
