@@ -9,11 +9,14 @@
     "lint": "biome check",
     "format": "biome format --write",
     "typegen": "sanity schema extract && sanity typegen generate --enforce-required-fields",
-    "test": "jest",
-    "test:dev": "jest --watch",
-    "test:ci": "jest --ci --coverage",
-    "test:unit": "jest --testPathPattern=unit",
-    "test:integration": "jest --testPathPattern=integration"
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:dev": "vitest --watch",
+    "test:ci": "vitest run --reporter=junit --reporter=verbose",
+    "test:unit": "vitest --run --testNamePattern='unit'",
+    "test:integration": "vitest --run --testNamePattern='integration'"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.36.7",
