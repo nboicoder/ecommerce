@@ -34,6 +34,9 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
   const urlMaxPrice = Number(searchParams.get("maxPrice")) || 5000;
   const currentInStock = searchParams.get("inStock") === "true";
 
+  // Prevent hydration mismatches by ensuring client-side rendering consistency
+  const [mounted, setMounted] = useState(false);
+
   // Local state for price range (for smooth slider dragging)
   const [priceRange, setPriceRange] = useState<[number, number]>([
     urlMinPrice,
@@ -44,6 +47,26 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
   useEffect(() => {
     setPriceRange([urlMinPrice, urlMaxPrice]);
   }, [urlMinPrice, urlMaxPrice]);
+
+  // Effect to set mounted to true after component mounts
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Check if component is still hydrating
+  if (!mounted) {
+    // Render a minimal skeleton during hydration
+    return (
+      <div className="space-y-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="animate-pulse space-y-4">
+          <div className="h-4 bg-zinc-200 dark:bg-zinc-700 rounded w-1/4"></div>
+          <div className="h-10 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+          <div className="h-4 bg-zinc-200 dark:bg-zinc-700 rounded w-1/4"></div>
+          <div className="h-10 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+        </div>
+      </div>
+    );
+  }
 
   // Check which filters are active
   const isSearchActive = !!currentSearch;
@@ -210,9 +233,9 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
             <SelectValue placeholder="All Categories" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((category: any) => (
-              <SelectItem key={category._id} value={category.slug ?? ""}>
+            <SelectItem key="all-categories" value="all">All Categories</SelectItem>
+            {categories?.map((category: any) => (
+              <SelectItem key={category._id || category.id} value={category.slug || category.id || "unknown"}>
                 {category.title}
               </SelectItem>
             ))}
@@ -241,7 +264,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
             <SelectValue placeholder="All Colors" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Colors</SelectItem>
+            <SelectItem key="all-colors" value="all">All Colors</SelectItem>
             {COLORS.map((color) => (
               <SelectItem key={color.value} value={color.value}>
                 {color.label}
@@ -272,7 +295,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
             <SelectValue placeholder="All Materials" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Materials</SelectItem>
+            <SelectItem key="all-materials" value="all">All Materials</SelectItem>
             {MATERIALS.map((material) => (
               <SelectItem key={material.value} value={material.value}>
                 {material.label}

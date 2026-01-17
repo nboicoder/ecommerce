@@ -12,6 +12,11 @@ const nextConfig: NextConfig = {
         // Optional but recommended: allow all paths under this hostname
         pathname: "/**",
       },
+      {
+        protocol: "https",
+        hostname: "placehold.co",
+        pathname: "/**",
+      },
     ],
   },
 };

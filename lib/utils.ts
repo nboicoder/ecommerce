@@ -12,10 +12,13 @@ export function cn(...inputs: ClassValue[]) {
  * @returns Formatted price string (e.g., "£599.99")
  */
 export function formatPrice(
-    amount: number | null | undefined,
+    amount: number | string | null | undefined,
     currency = "$"
 ): string {
-    return `${currency}${(amount ?? 0).toFixed(2)}`;
+    // Convert amount to number, defaulting to 0 if invalid
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    const validAmount = (numAmount !== null && numAmount !== undefined && !isNaN(numAmount)) ? numAmount : 0;
+    return `${currency}${validAmount.toFixed(2)}`;
 }
 
 type DateFormatOption = "short" | "long" | "datetime";
