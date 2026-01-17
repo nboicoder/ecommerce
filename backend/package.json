@@ -10,7 +10,10 @@
     "test:dev": "jest --watch",
     "test:ci": "jest --ci --coverage",
     "test:unit": "jest --testPathPattern=unit",
-    "test:integration": "jest --testPathPattern=integration"
+    "test:integration": "jest --testPathPattern=integration",
+    "db:create": "node create-db.js",
+    "db:seed": "node seed-db.js",
+    "db:verify": "node verify-db.js"
   },
   "keywords": [
     "ecommerce",
