@@ -21,5 +21,7 @@ module.exports = {
   coverageReporters: ['json', 'lcov', 'text', 'clover'],
   transform: {
     '^.+\\.(js|jsx|ts|tsx)$': ['babel-jest', { presets: ['next/babel'] }]
-  }
+  },
+  // Limit workers in CI environment to avoid resource exhaustion
+  maxWorkers: process.env.CI ? 2 : '50%'
 };
