@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: ecommerce
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: ecommerce-frontend:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: NEXT_PUBLIC_API_BASE_URL
+          value: "http://backend-service.ecommerce.svc.cluster.local:5000"
+        - name: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: frontend-secrets
+              key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        - name: CLERK_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: frontend-secrets
+              key: CLERK_SECRET_KEY
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: frontend-secrets
+              key: DATABASE_URL
+        - name: NEXT_PUBLIC_SANITY_PROJECT_ID
+          valueFrom:
+            secretKeyRef:
+              name: frontend-secrets
+              key: NEXT_PUBLIC_SANITY_PROJECT_ID
+        - name: SANITY_API_READ_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: frontend-secrets
+              key: SANITY_API_READ_TOKEN
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: ecommerce
+spec:
+  selector:
+    app: frontend
+  ports:
+    - protocol: TCP
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP
