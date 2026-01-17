@@ -45,6 +45,7 @@ export function CartItem({ item, stockInfo }: CartItemProps) {
                         fill
                         className="object-cover"
                         sizes="80px"
+                        unoptimized={typeof item.image === 'string' && item.image.startsWith('/images/')}
                     />
                 ) : (
                     <div className="flex h-full items-center justify-center text-xs text-zinc-400">

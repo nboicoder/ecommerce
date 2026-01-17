@@ -1,5 +1,8 @@
 const asyncHandler = require('express-async-handler');
-const Category = require('../models/Category');
+const { db } = require('../config/db'); // Import models from the db connection
+
+// Access models
+const Category = db.Category;
 
 // @desc    Get all categories
 // @route   GET /api/categories

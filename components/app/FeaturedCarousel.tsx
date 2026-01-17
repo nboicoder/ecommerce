@@ -25,6 +25,9 @@ interface FeaturedCarouselProps {
 }
 
 export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
+  // Limit products to 5 for the carousel
+  const limitedProducts = products.slice(0, 5);
+
   const [api, setApi] = useState<CarouselApi>();
   const [current, setCurrent] = useState(0);
   const [count, setCount] = useState(0);
@@ -32,13 +35,14 @@ export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
   useEffect(() => {
     if (!api) return;
 
-    setCount(api.scrollSnapList().length);
+    // Count is based on the limited products
+    setCount(limitedProducts.length);
     setCurrent(api.selectedScrollSnap());
 
     api.on("select", () => {
       setCurrent(api.selectedScrollSnap());
     });
-  }, [api]);
+  }, [api, limitedProducts.length]);
 
   const scrollTo = useCallback(
     (index: number) => {
@@ -47,11 +51,9 @@ export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
     [api]
   );
 
-  if (products.length === 0) {
+  if (limitedProducts.length === 0) {
     return null;
   }
-
-
 
   return (
     <div className="relative w-full bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
@@ -71,8 +73,8 @@ export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
         className="w-full"
       >
         <CarouselContent className="-ml-0">
-          {products.map((product: any) => (
-            <CarouselItem key={product._id} className="pl-0">
+          {limitedProducts.map((product: any) => (
+            <CarouselItem key={product.id || product._id} className="pl-0">
               <FeaturedSlide product={product} />
             </CarouselItem>
           ))}
@@ -84,9 +86,9 @@ export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
       </Carousel>
 
       {/* Dot indicators */}
-      {count > 1 && (
+      {limitedProducts.length > 1 && (
         <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2 sm:bottom-6">
-          {Array.from({ length: count }).map((_, index) => (
+          {limitedProducts.map((_, index) => (
             <button
               key={`dot-${index}`}
               type="button"
@@ -125,6 +127,7 @@ function FeaturedSlide({ product }: FeaturedSlideProps) {
             className="object-cover"
             sizes="(max-width: 768px) 100vw, 60vw"
             priority
+            unoptimized={typeof mainImage === 'string' && mainImage.startsWith('/images/')}
           />
         ) : (
           <div className="flex h-full items-center justify-center bg-zinc-800">
@@ -144,7 +147,7 @@ function FeaturedSlide({ product }: FeaturedSlideProps) {
             variant="secondary"
             className="mb-4 w-fit bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
           >
-            {product.category.title}
+            {product.category.name || product.category.title}
           </Badge>
         )}
 
@@ -168,7 +171,7 @@ function FeaturedSlide({ product }: FeaturedSlideProps) {
             size="lg"
             className="bg-white text-zinc-900 hover:bg-zinc-100"
           >
-            <Link href={`/products/${product.slug}`}>
+            <Link href={`/products/${product.slug || product.id}`}>
               Shop Now
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>

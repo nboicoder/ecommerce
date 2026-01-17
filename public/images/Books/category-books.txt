@@ -1,0 +1,2 @@
+This is a placeholder for the Books category image.
+Actual image files should be placed here.

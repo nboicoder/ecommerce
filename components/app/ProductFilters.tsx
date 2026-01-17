@@ -235,8 +235,8 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
           <SelectContent>
             <SelectItem key="all-categories" value="all">All Categories</SelectItem>
             {categories?.map((category: any) => (
-              <SelectItem key={category._id || category.id} value={category.slug || category.id || "unknown"}>
-                {category.title}
+              <SelectItem key={category._id || category.id} value={category.slug}>
+                {category.name || category.title}
               </SelectItem>
             ))}
           </SelectContent>

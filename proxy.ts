@@ -1,19 +1,9 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 
-const isProtectedRoute = createRouteMatcher([
-  "/checkout",
-  "/orders",
-  "/orders/[id]",
-  "/checkout/success",
-]);
+// Temporarily disabled authentication for development
+// Original protected routes: ["/checkout", "/orders", "/orders/[id]", "/checkout/success"]
 
-// export default clerkMiddleware();
-
-export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
-    await auth.protect();
-  }
-});
+export default clerkMiddleware();
 
 export const config = {
   matcher: [

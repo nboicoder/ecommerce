@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { Package, ShoppingBag, Sparkles, User } from "lucide-react";
-import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { useCartActions, useTotalItems } from "@/lib/store/cart-store-provider";
 import { useChatActions, useIsChatOpen } from "@/lib/store/chat-store-provider";
@@ -25,15 +24,13 @@ export function Header() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          {/* My Orders - Only when signed in */}
-          <SignedIn>
-            <Button asChild>
-              <Link href="/orders" className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
-                <span className="text-sm font-medium">My Orders</span>
-              </Link>
-            </Button>
-          </SignedIn>
+          {/* My Orders - Temporarily accessible to all users */}
+          <Button asChild>
+            <Link href="/orders" className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              <span className="text-sm font-medium">My Orders</span>
+            </Link>
+          </Button>
 
           {/* AI Shopping Assistant */}
           {!isChatOpen && (
@@ -62,33 +59,11 @@ export function Header() {
             <span className="sr-only">Open cart ({totalItems} items)</span>
           </Button>
 
-          {/* User */}
-          <SignedIn>
-            <UserButton
-              afterSwitchSessionUrl="/"
-              appearance={{
-                elements: {
-                  avatarBox: "h-9 w-9",
-                },
-              }}
-            >
-              <UserButton.MenuItems>
-                <UserButton.Link
-                  label="My Orders"
-                  labelIcon={<Package className="h-4 w-4" />}
-                  href="/orders"
-                />
-              </UserButton.MenuItems>
-            </UserButton>
-          </SignedIn>
-          <SignedOut>
-            <SignInButton mode="modal">
-              <Button variant="ghost" size="icon">
-                <User className="h-5 w-5" />
-                <span className="sr-only">Sign in</span>
-              </Button>
-            </SignInButton>
-          </SignedOut>
+          {/* User - Temporarily removed authentication */}
+          <Button variant="ghost" size="icon">
+            <User className="h-5 w-5" />
+            <span className="sr-only">Guest user</span>
+          </Button>
         </div>
       </div>
     </header>

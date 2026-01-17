@@ -6,6 +6,7 @@ const {
     createProduct,
     updateProduct,
     deleteProduct,
+    getProductBySlug,
     getProductsByCategory 
 } = require('../../controllers/productController');
 
@@ -23,6 +24,11 @@ router.get('/category/:categoryId', getProductsByCategory);
 // @desc    Get product by ID
 // @access  Public
 router.get('/:id', getProductById);
+
+// @route   GET api/products/slug/:slug
+// @desc    Get product by slug
+// @access  Public
+router.get('/slug/:slug', getProductBySlug);
 
 // @route   POST api/products
 // @desc    Create a product

@@ -17,10 +17,10 @@ export function ProductInfo({ product }: ProductInfoProps) {
             {/* Category */}
             {product.category && (
                 <Link
-                    href={`/?category=${product.category.slug}`}
+                    href={`/?category=${product.category.slug || product.category.name.toLowerCase().replace(/\s+/g, '-')}`}
                     className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
                 >
-                    {product.category.title}
+                    {product.category.name || product.category.title}
                 </Link>
             )}
 
@@ -43,9 +43,9 @@ export function ProductInfo({ product }: ProductInfoProps) {
 
             {/* Stock & Add to Cart */}
             <div className="mt-6 flex flex-col gap-3">
-                <StockBadge productId={product._id} stock={product.stock ?? 0} />
+                <StockBadge productId={product.id || product._id} stock={product.stock ?? 0} />
                 <AddToCartButton
-                    productId={product._id}
+                    productId={product.id || product._id}
                     name={product.name ?? "Unknown Product"}
                     price={product.price ?? 0}
                     image={imageUrl ?? undefined}

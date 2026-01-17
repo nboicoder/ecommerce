@@ -1,0 +1,2 @@
+This is a placeholder for Clothing product 1 image.
+Actual image files should be placed here.

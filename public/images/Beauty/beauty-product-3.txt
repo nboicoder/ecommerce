@@ -1,0 +1,2 @@
+This is a placeholder for Beauty product 3 image.
+Actual image files should be placed here.

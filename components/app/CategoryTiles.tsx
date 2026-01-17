@@ -22,7 +22,7 @@ export function CategoryTiles({
         <Link
           href="/"
           className={`group relative flex-shrink-0 overflow-hidden rounded-xl transition-all duration-300 ${
-            !activeCategory
+            !activeCategory || activeCategory === 'all'
               ? "ring-2 ring-amber-500 ring-offset-2 dark:ring-offset-zinc-900"
               : "hover:ring-2 hover:ring-zinc-300 hover:ring-offset-2 dark:hover:ring-zinc-600 dark:hover:ring-offset-zinc-900"
           }`}
@@ -51,11 +51,11 @@ export function CategoryTiles({
         {/* Category tiles */}
         {categories.map((category: any) => {
           const isActive = activeCategory === category.slug;
-          const imageUrl = category.image?.asset?.url;
+          const imageUrl = category.imageUrl || category.image?.asset?.url;
 
           return (
             <Link
-              key={category._id}
+              key={category.id || category._id}
               href={`/?category=${category.slug}`}
               className={`group relative flex-shrink-0 overflow-hidden rounded-xl transition-all duration-300 ${
                 isActive
@@ -68,9 +68,10 @@ export function CategoryTiles({
                 {imageUrl ? (
                   <Image
                     src={imageUrl}
-                    alt={category.title ?? "Category"}
+                    alt={category.name || category.title || "Category"}
                     fill
                     className="object-cover transition-transform duration-500 group-hover:scale-110"
+                    unoptimized={typeof imageUrl === 'string' && imageUrl.startsWith('/images/')} // Disable optimization for local images
                   />
                 ) : (
                   <div className="absolute inset-0 bg-gradient-to-br from-amber-500 to-orange-600" />
@@ -82,7 +83,7 @@ export function CategoryTiles({
                 {/* Category name */}
                 <div className="absolute inset-x-0 bottom-0 p-4">
                   <span className="text-base font-semibold text-white drop-shadow-md">
-                    {category.title}
+                    {category.name || category.title}
                   </span>
                 </div>
 

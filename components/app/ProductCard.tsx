@@ -34,7 +34,7 @@ export function ProductCard({ product }: ProductCardProps) {
 
   return (
     <Card className="group relative flex h-full flex-col overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-sm ring-1 ring-zinc-950/5 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-zinc-950/10 dark:bg-zinc-900 dark:ring-white/10 dark:hover:shadow-zinc-950/50">
-      <Link href={`/products/${product.slug}`} className="block">
+      <Link href={`/products/${product.slug || product.id}`} className="block">
         <div
           className={cn(
             "relative overflow-hidden bg-linear-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900",
@@ -48,6 +48,7 @@ export function ProductCard({ product }: ProductCardProps) {
               fill
               className="object-cover transition-transform duration-500 ease-out group-hover:scale-110"
               sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
+              unoptimized={typeof displayedImageUrl === 'string' && displayedImageUrl.startsWith('/images/')}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-zinc-400">
@@ -79,7 +80,7 @@ export function ProductCard({ product }: ProductCardProps) {
           )}
           {product.category && (
             <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-zinc-700 shadow-sm backdrop-blur-sm dark:bg-zinc-900/90 dark:text-zinc-300">
-              {product.category.title}
+              {product.category.name || product.category.title}
             </span>
           )}
         </div>
@@ -97,7 +98,7 @@ export function ProductCard({ product }: ProductCardProps) {
                 hoveredImageIndex === index
                   ? "ring-2 ring-zinc-900 ring-offset-2 dark:ring-white dark:ring-offset-zinc-900"
                   : "opacity-50 hover:opacity-100"
-              )}
+            )}
               onMouseEnter={() => setHoveredImageIndex(index)}
               onMouseLeave={() => setHoveredImageIndex(null)}
             >
@@ -108,6 +109,7 @@ export function ProductCard({ product }: ProductCardProps) {
                   fill
                   className="object-cover"
                   sizes="100px"
+                  unoptimized={typeof image.asset.url === 'string' && image.asset.url.startsWith('/images/')}
                 />
               )}
             </button>
@@ -116,7 +118,7 @@ export function ProductCard({ product }: ProductCardProps) {
       )}
 
       <CardContent className="flex grow flex-col justify-between gap-2 p-5">
-        <Link href={`/products/${product.slug}`} className="block">
+        <Link href={`/products/${product.slug || product.id}`} className="block">
           <h3 className="line-clamp-2 text-base font-semibold leading-tight text-zinc-900 transition-colors group-hover:text-zinc-600 dark:text-zinc-100 dark:group-hover:text-zinc-300">
             {product.name}
           </h3>
@@ -125,13 +127,13 @@ export function ProductCard({ product }: ProductCardProps) {
           <p className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
             {formatPrice(product.price)}
           </p>
-          <StockBadge productId={product._id} stock={stock} />
+          <StockBadge productId={product.id || product._id} stock={stock} />
         </div>
       </CardContent>
 
       <CardFooter className="mt-auto p-5 pt-0">
         <AddToCartButton
-          productId={product._id}
+          productId={product.id || product._id}
           name={product.name ?? "Unknown Product"}
           price={product.price ?? 0}
           image={mainImageUrl ?? undefined}
