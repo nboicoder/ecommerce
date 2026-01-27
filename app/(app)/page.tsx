@@ -1,9 +1,17 @@
+import { sanityFetch } from "@/sanity/lib/live";
+import { ALL_CATEGORIES_QUERY } from "@/lib/sanity/queries/categories";
+import {
+  FEATURED_PRODUCTS_QUERY,
+  FILTER_PRODUCTS_BY_NAME_QUERY,
+  FILTER_PRODUCTS_BY_PRICE_ASC_QUERY,
+  FILTER_PRODUCTS_BY_PRICE_DESC_QUERY,
+  FILTER_PRODUCTS_BY_RELEVANCE_QUERY,
+} from "@/lib/sanity/queries/products";
 import { Suspense } from "react";
 import { FeaturedCarousel } from "@/components/app/FeaturedCarousel";
 import { FeaturedCarouselSkeleton } from "@/components/app/FeaturedCarouselSkeleton";
 import { CategoryTiles } from "@/components/app/CategoryTiles";
 import { ProductSection } from "@/components/app/ProductSection";
-import { backendClient } from "@/lib/api/backendClient";
 
 interface PageProps {
   searchParams: Promise<{
@@ -30,87 +38,48 @@ export default async function Home({ searchParams }: PageProps) {
   const sort = params.sort ?? "name";
   const inStock = params.inStock ?? "";
 
-  console.log('Params ===>>', params);
-  console.log('Search query ===>>', searchQuery);
+  //Select query based on sort parameter
+  const getQuery = () => {
+    // If searching and sort is relevance, use relevance query
+    if (searchQuery && sort === "relevance") {
+      return FILTER_PRODUCTS_BY_RELEVANCE_QUERY;
+    }
+
+    switch (sort) {
+      case "price_asc":
+        return FILTER_PRODUCTS_BY_PRICE_ASC_QUERY;
+      case "price_desc":
+        return FILTER_PRODUCTS_BY_PRICE_DESC_QUERY;
+      case "relevance":
+        return FILTER_PRODUCTS_BY_RELEVANCE_QUERY;
+      default:
+        return FILTER_PRODUCTS_BY_NAME_QUERY;
+    }
+  };
 
   // Fetch categories for filter sidebar
-  const categories = await backendClient.category.getAllCategories();
+  const { data: categories } = await sanityFetch({
+    query: ALL_CATEGORIES_QUERY,
+  });
 
-  // Fetch all products for now (we'll implement filtering later)
-  let products = await backendClient.product.getAllProducts();
+  // Fetch featured products for carousel
+  const { data: featuredProducts } = await sanityFetch({
+    query: FEATURED_PRODUCTS_QUERY,
+  });
 
-    console.log('Categories =>', categories)
-    console.log('Products =>', products)
-
-
-  // Apply client-side filtering based on search parameters
-  if (searchQuery) {
-    products = products.filter(product =>
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.description.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }
-
-  if (categorySlug && categorySlug !== 'all') {
-    // Find category by slug
-    const matchedCategory = categories.find(cat =>
-      cat.slug.toLowerCase() === categorySlug.toLowerCase()
-    );
-    if (matchedCategory) {
-      products = products.filter(product =>
-        product.categoryId === matchedCategory.id
-      );
-    }
-  }
-
-  if (color) {
-    products = products.filter(product =>
-      product.color?.toLowerCase() === color.toLowerCase()
-    );
-  }
-
-  if (material) {
-    products = products.filter(product =>
-      product.material?.toLowerCase() === material.toLowerCase()
-    );
-  }
-
-  if (minPrice > 0) {
-    products = products.filter(product =>
-      Number(product.price) >= minPrice
-    );
-  }
-
-  if (maxPrice > 0) {
-    products = products.filter(product =>
-      Number(product.price) <= maxPrice
-    );
-  }
-
-  if (inStock === 'true') {
-    products = products.filter(product =>
-      product.stock > 0
-    );
-  }
-
-  // Apply sorting
-  switch (sort) {
-    case "price_asc":
-      products.sort((a, b) => Number(a.price) - Number(b.price));
-      break;
-    case "price_desc":
-      products.sort((a, b) => Number(b.price) - Number(a.price));
-      break;
-    case "relevance":
-      // For now, relevance is handled by search filtering above
-      break;
-    default:
-      products.sort((a, b) => a.name.localeCompare(b.name));
-      break;
-  }
-
-  // For featured products carousel, filter featured products
-  const featuredProducts = products.filter(product => product.featured);
+  // Fetch products with filters (server-side via GROQ)
+  const { data: products } = await sanityFetch({
+    query: getQuery(),
+    params: {
+      searchQuery,
+      categorySlug,
+      color,
+      material,
+      minPrice,
+      maxPrice,
+      inStock,
+    },
+  });
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">

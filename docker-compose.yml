@@ -53,7 +53,8 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=0000
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Persist data to a local directory to prevent data loss
+      - ./postgres-data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
 

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { backendClient } from "@/lib/api/backendClient";
+import { sanityFetch } from "@/sanity/lib/live";
+import { PRODUCT_BY_SLUG_QUERY } from "@/lib/sanity/queries/products";
 import { ProductGallery } from "@/components/app/ProductGallery";
 import { ProductInfo } from "@/components/app/ProductInfo";
 
@@ -12,19 +13,10 @@ interface ProductPageProps {
 export default async function ProductPage({ params }: ProductPageProps) {
     const { slug } = await params;
 
-    let product = null;
-    try {
-        // Try to get product by slug first
-        product = await backendClient.product.getProductBySlug(slug);
-    } catch (error) {
-        // If not found by slug, try to get by ID as fallback
-        try {
-            product = await backendClient.product.getProductById(slug);
-        } catch (idError) {
-            // If neither works, product not found
-            notFound();
-        }
-    }
+    const { data: product } = await sanityFetch({
+        query: PRODUCT_BY_SLUG_QUERY,
+        params: { slug },
+    });
 
     if (!product) {
         notFound();

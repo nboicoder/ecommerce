@@ -15,7 +15,8 @@
     "db:create": "node create-db.js",
     "db:seed": "node seed-db.js",
     "db:verify": "node verify-db.js",
-    "db:migrate-slugs": "node migrate-slugs.js"
+    "db:migrate-slugs": "node migrate-slugs.js",
+    "db:safe-sync": "node safe-sync.js"
   },
   "keywords": [
     "ecommerce",
