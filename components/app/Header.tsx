@@ -45,13 +45,13 @@ export function Header() {
                             <span className="text-sm font-medium">Ask AI</span>
                         </Button>
                     )}
-
                     {/* Cart Button */}
                     <Button
                         variant="ghost"
                         size="icon"
                         className="relative"
                         onClick={openCart}
+
                     >
                         <ShoppingBag className="h-5 w-5" />
                         {totalItems > 0 && (
