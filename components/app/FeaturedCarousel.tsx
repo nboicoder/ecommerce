@@ -25,8 +25,11 @@ interface FeaturedCarouselProps {
 }
 
 export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
+  // Defensive programming: ensure products is an array
+  const validProducts = Array.isArray(products) ? products : [];
+
   // Limit products to 5 for the carousel
-  const limitedProducts = products.slice(0, 5);
+  const limitedProducts = validProducts.slice(0, 5);
 
   const [api, setApi] = useState<CarouselApi>();
   const [current, setCurrent] = useState(0);
@@ -48,7 +51,7 @@ export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
     (index: number) => {
       api?.scrollTo(index);
     },
-    [api]
+    [api],
   );
 
   if (limitedProducts.length === 0) {
@@ -56,7 +59,7 @@ export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
   }
 
   return (
-    <div className="relative w-full bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
+    <div className="relative w-full bg-linear-to-br from-zinc-900 via-zinc-800 to-zinc-900 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
       <Carousel
         setApi={setApi}
         opts={{
@@ -72,12 +75,14 @@ export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
         ]}
         className="w-full"
       >
-        <CarouselContent className="-ml-0">
-          {limitedProducts.map((product: any) => (
-            <CarouselItem key={product.id || product._id} className="pl-0">
-              <FeaturedSlide product={product} />
-            </CarouselItem>
-          ))}
+        <CarouselContent className="ml-0">
+          {limitedProducts
+            .filter((product: any) => product && typeof product === "object")
+            .map((product: any) => (
+              <CarouselItem key={product.id || product._id} className="pl-0">
+                <FeaturedSlide product={product} />
+              </CarouselItem>
+            ))}
         </CarouselContent>
 
         {/* Navigation arrows - positioned inside */}
@@ -88,7 +93,7 @@ export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
       {/* Dot indicators */}
       {limitedProducts.length > 1 && (
         <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2 sm:bottom-6">
-          {limitedProducts.map((_, index) => (
+          {limitedProducts.map((item: any, index: number) => (
             <button
               key={`dot-${index}`}
               type="button"
@@ -97,7 +102,7 @@ export function FeaturedCarousel({ products }: FeaturedCarouselProps) {
                 "h-2 w-2 rounded-full transition-all duration-300",
                 current === index
                   ? "w-6 bg-white"
-                  : "bg-white/40 hover:bg-white/60"
+                  : "bg-white/40 hover:bg-white/60",
               )}
               aria-label={`Go to slide ${index + 1}`}
             />
@@ -116,7 +121,7 @@ function FeaturedSlide({ product }: FeaturedSlideProps) {
   const mainImage = product.images?.[0]?.asset?.url;
 
   return (
-    <div className="flex min-h-[400px] flex-col md:min-h-[450px] md:flex-row lg:min-h-[500px]">
+    <div className="flex min-h-100 flex-col md:min-h-112.5 md:flex-row lg:min-h-125">
       {/* Image Section - Left side (60% on desktop) */}
       <div className="relative h-64 w-full md:h-auto md:w-3/5">
         {mainImage ? (
@@ -127,7 +132,9 @@ function FeaturedSlide({ product }: FeaturedSlideProps) {
             className="object-cover"
             sizes="(max-width: 768px) 100vw, 60vw"
             priority
-            unoptimized={typeof mainImage === 'string' && mainImage.startsWith('/images/')}
+            unoptimized={
+              typeof mainImage === "string" && mainImage.startsWith("/images/")
+            }
           />
         ) : (
           <div className="flex h-full items-center justify-center bg-zinc-800">
@@ -136,8 +143,8 @@ function FeaturedSlide({ product }: FeaturedSlideProps) {
         )}
 
         {/* Gradient overlay for image edge blending */}
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-zinc-900/90 dark:to-zinc-950/90 hidden md:block" />
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-900/90 via-transparent to-transparent md:hidden" />
+        <div className="absolute inset-0 bg-linear-to-r from-transparent via-transparent to-zinc-900/90 dark:to-zinc-950/90 hidden md:block" />
+        <div className="absolute inset-0 bg-linear-to-t from-zinc-900/90 via-transparent to-transparent md:hidden" />
       </div>
 
       {/* Content Section - Right side (40% on desktop) */}

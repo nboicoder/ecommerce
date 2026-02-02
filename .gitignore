@@ -48,3 +48,7 @@ backend/seedData.js
 backend/verifyData.js
 backend/README.md
 backend/package-lock.json
+# clerk configuration (can include secrets)
+/.clerk/
+
+.vercel

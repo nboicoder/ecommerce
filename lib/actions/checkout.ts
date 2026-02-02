@@ -11,7 +11,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: "2025-11-17.clover",
+    apiVersion: "2026-01-28.clover",
 });
 
 // Types
@@ -40,6 +40,8 @@ export async function createCheckoutSession(
         // 1. Verify user is authenticated
         const {userId} = await auth();
         const user = await currentUser();
+
+        console.log('Current User ===>>', user);
 
         if (!userId || !user) {
             return {success: false, error: "Please sign in to checkout"};
@@ -118,6 +120,14 @@ export async function createCheckoutSession(
             await getOrCreateStripeCustomer(userEmail, userName, userId);
 
         // 7. Prepare metadata for webhook
+        console.log("Preparing checkout session with metadata:", {
+            clerkUserId: userId,
+            userEmail,
+            sanityCustomerId,
+            productIds: validatedItems.map((i) => i.product._id).join(","),
+            quantities: validatedItems.map((i) => i.quantity).join(","),
+        });
+
         const metadata = {
             clerkUserId: userId,
             userEmail,
@@ -237,7 +247,7 @@ export async function getCheckoutSession(sessionId: string) {
                 amountTotal: session.amount_total,
                 paymentStatus: session.payment_status,
                 shippingAddress: session.customer_details?.address,
-                lineItems: session.line_items?.data.map((item: any) => ({
+                lineItems: session.line_items?.data.map((item) => ({
                     name: item.description,
                     quantity: item.quantity,
                     amount: item.amount_total,
